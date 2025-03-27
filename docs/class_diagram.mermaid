@@ -1,0 +1,285 @@
+classDiagram
+    %% Model Classes
+    class BaseModel {
+        <<Pydantic>>
+    }
+
+    class BaseTransaction {
+        +datetime date
+        +float amount
+        +str memo
+        +ClearedStatus cleared_status
+        +parse_date(value)
+    }
+
+    class BankingTransaction {
+        +str payee
+        +str number
+        +str category
+        +List[str] address
+        +List[SplitTransaction] splits
+        +validate_category(value)
+        +is_transfer()
+        +get_transfer_account()
+    }
+
+    class InvestmentTransaction {
+        +InvestmentAction action
+        +str security
+        +float price
+        +float quantity
+        +float commission
+        +str account
+        +float transfer_amount
+        +str payee
+    }
+
+    class SplitTransaction {
+        +str category
+        +str memo
+        +float amount
+        +float percentage
+    }
+
+    class AccountDefinition {
+        +str name
+        +AccountType type
+        +str description
+        +float credit_limit
+        +datetime statement_balance_date
+        +float statement_balance
+    }
+
+    class CategoryItem {
+        +str name
+        +str description
+        +bool tax_related
+        +bool income
+        +bool expense
+        +float budget_amount
+        +str tax_schedule
+    }
+
+    class ClassItem {
+        +str name
+        +str description
+    }
+
+    class MemorizedTransaction {
+        +MemorizedTransactionType transaction_type
+        +float amount
+        +ClearedStatus cleared_status
+        +str payee
+        +str memo
+        +List[str] address
+        +str category
+        +List[SplitTransaction] splits
+        +Dict amortization
+    }
+
+    class QIFFile {
+        +List[AccountDefinition] accounts
+        +Dict[str, List[BankingTransaction]] bank_transactions
+        +Dict[str, List[BankingTransaction]] cash_transactions
+        +Dict[str, List[BankingTransaction]] credit_card_transactions
+        +Dict[str, List[InvestmentTransaction]] investment_transactions
+        +Dict[str, List[BankingTransaction]] asset_transactions
+        +Dict[str, List[BankingTransaction]] liability_transactions
+        +List[CategoryItem] categories
+        +List[ClassItem] classes
+        +List[MemorizedTransaction] memorized_transactions
+        +get_account_transactions(account_name)
+        +add_transaction(account_name, account_type, transaction)
+    }
+
+    class CSVTemplate {
+        +str name
+        +str description
+        +AccountType account_type
+        +str delimiter
+        +bool has_header
+        +str date_format
+        +Dict[str, str] field_mapping
+        +int skip_rows
+        +List[str] amount_columns
+        +Dict[str, float] amount_multiplier
+        +str category_format
+        +bool detect_transfers
+        +str transfer_pattern
+    }
+
+    %% Enum Classes
+    class ClearedStatus {
+        <<Enum>>
+        UNCLEARED
+        CLEARED
+        CLEARED_ALT
+        RECONCILED
+        RECONCILED_ALT
+    }
+
+    class AccountType {
+        <<Enum>>
+        BANK
+        CASH
+        CREDIT_CARD
+        INVESTMENT
+        ASSET
+        LIABILITY
+        INVOICE
+    }
+
+    class InvestmentAction {
+        <<Enum>>
+        BUY
+        BUY_X
+        SELL
+        SELL_X
+        DIV
+        DIV_X
+        %% ... other action types
+    }
+
+    class MemorizedTransactionType {
+        <<Enum>>
+        CHECK
+        DEPOSIT
+        PAYMENT
+        INVESTMENT
+        ELECTRONIC
+    }
+
+    %% Service Classes
+    class QIFParser {
+        +QIFFile parse(qif_content)
+        -parse_header(line)
+        -parse_transaction(lines)
+        -parse_account(lines)
+        -parse_category(lines)
+        -parse_class(lines)
+        -parse_memorized(lines)
+    }
+
+    class QIFGenerator {
+        +str generate(qif_file)
+        -generate_account_header(account_type)
+        -generate_transaction(transaction)
+        -generate_split(split)
+    }
+
+    class CSVParser {
+        +List[BaseTransaction] parse_csv(csv_content, template)
+        -map_row_to_transaction(row, template)
+        -parse_date(value, format)
+        -parse_amount(value, columns, multipliers)
+        -detect_transfer(value, pattern)
+    }
+
+    class CSVGenerator {
+        +str generate_csv(transactions, headers)
+        -transaction_to_row(transaction)
+        -format_date(date, format)
+        -format_amount(amount)
+    }
+
+    class TransferRecognitionService {
+        +List[BaseTransaction] process_transfers(transactions)
+        -detect_transfer_pairs(transactions)
+        -link_transfers(from_transaction, to_transaction)
+    }
+
+    %% UI Classes
+    class MainWindow {
+        +init()
+        +setup_ui()
+        +create_menus()
+        +create_toolbar()
+        +connect_signals()
+    }
+
+    class ConversionPanel {
+        +init(parent)
+        +setup_ui()
+        +handle_file_selection()
+        +handle_template_selection()
+        +handle_conversion()
+        +show_preview()
+    }
+
+    class TemplateManager {
+        +init(parent)
+        +setup_ui()
+        +load_templates()
+        +save_template()
+        +delete_template()
+        +edit_template()
+    }
+
+    class TransactionEditor {
+        +init(parent)
+        +setup_ui()
+        +load_transactions(transactions)
+        +edit_transaction(index)
+        +add_transaction()
+        +delete_transaction(index)
+        +save_changes()
+    }
+
+    %% Controller Classes
+    class MainController {
+        +handle_csv_to_qif_action()
+        +handle_qif_to_csv_action()
+        +handle_template_manager_action()
+        +handle_settings_action()
+        +handle_about_action()
+    }
+
+    class ConversionController {
+        +convert_csv_to_qif(csv_file, template, output_file)
+        +convert_qif_to_csv(qif_file, output_file)
+        +preview_conversion(file, template)
+    }
+
+    class TemplateController {
+        +get_templates()
+        +save_template(template)
+        +delete_template(name)
+        +get_template(name)
+    }
+
+    %% Relationships
+    BaseModel <|-- BaseTransaction
+    BaseModel <|-- SplitTransaction
+    BaseModel <|-- AccountDefinition
+    BaseModel <|-- CategoryItem
+    BaseModel <|-- ClassItem
+    BaseModel <|-- MemorizedTransaction
+    BaseModel <|-- QIFFile
+    BaseModel <|-- CSVTemplate
+
+    BaseTransaction <|-- BankingTransaction
+    BaseTransaction <|-- InvestmentTransaction
+
+    BankingTransaction "1" *-- "0..*" SplitTransaction
+    MemorizedTransaction "1" *-- "0..*" SplitTransaction
+
+    QIFFile "1" *-- "0..*" AccountDefinition
+    QIFFile "1" *-- "0..*" BankingTransaction
+    QIFFile "1" *-- "0..*" InvestmentTransaction
+    QIFFile "1" *-- "0..*" CategoryItem
+    QIFFile "1" *-- "0..*" ClassItem
+    QIFFile "1" *-- "0..*" MemorizedTransaction
+
+    MainWindow "1" *-- "1" ConversionPanel
+    MainWindow "1" *-- "1" TemplateManager
+    MainWindow "1" *-- "1" TransactionEditor
+
+    MainWindow "1" o-- "1" MainController
+    MainController "1" o-- "1" ConversionController
+    MainController "1" o-- "1" TemplateController
+
+    ConversionController ..> QIFParser
+    ConversionController ..> QIFGenerator
+    ConversionController ..> CSVParser
+    ConversionController ..> CSVGenerator
+    ConversionController ..> TransferRecognitionService

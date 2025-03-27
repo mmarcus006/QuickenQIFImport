@@ -1,0 +1,7 @@
+[run]
+omit =
+    src/quickenqifimport/ui/gui.py
+    */__pycache__/*
+    */site-packages/*
+    */dist-packages/*
+    */tests/*
