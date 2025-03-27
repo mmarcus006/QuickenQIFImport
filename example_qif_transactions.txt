@@ -1,0 +1,316 @@
+!Type:Bank
+D11/30'24
+U13,384.57
+T13,384.57
+NDEP
+PMonthly Interest
+LInterest Inc
+^
+D11/30'24
+U1.24
+T1.24
+NDEP
+PMonthly Interest
+LInterest Inc
+^
+D12/ 4'24
+U1,531,850.35
+T1,531,850.35
+PArchitect Capital
+L[P - Architect Capital Opp. Fund LP]
+^
+D12/13'24
+U33,674.08
+T33,674.08
+NTXFR
+PHSCM
+L[C - HSCM Bermuda Ltd]
+^
+D12/13'24
+U-5,000,000.00
+T-5,000,000.00
+PIrenic Wilshire LLC
+L[P - Irenic Wilshire LLC]
+^
+D12/31'24
+U7,716.65
+T7,716.65
+NDEP
+PMonthly Interest
+LInterest Inc
+^
+D1/ 1'25
+U-61,311.02
+T-61,311.02
+PTRANSFER TO ONLINE ACCOUNT
+L[ON - CASH - Goldman Sachs Main-Cash]
+^
+!Account
+NOFF - Goldman Sachs Cash - Giving LLC
+TBank
+^
+!Type:Bank
+D11/30'24
+U21,767.90
+T21,767.90
+NDEP
+PMonthly Interest
+LInterest Inc
+^
+D12/13'24
+U76,500.00
+T76,500.00
+NTXFR
+PArc Credit Investors
+L[P - (Giving) Arc Fund Investors]
+^
+D12/31'24
+U23,516.07
+T23,516.07
+NDEP
+PMonthly Interest
+LInterest Inc
+^
+D1/ 1'25
+U-6,021,208.15
+T-6,021,208.15
+PTRANSFER TO ONLINE ACCOUNT
+L[ON - CASH - GS - Giving LLC-Cash]
+^
+!Account
+NOFF - Goldman Sachs Cash - Giving LLC NL
+TBank
+^
+!Type:Bank
+D12/31'24
+U1,416.44
+T1,416.44
+NDEP
+PMonthly Interest
+LInterest Inc
+^
+D12/31'24
+U156,249.99
+T156,249.99
+NDEP
+PFrom CN2T
+L[P - Giving LLC NL PS]
+^
+D1/ 1'25
+U-516,452.21
+T-516,452.21
+PTRANSFER TO ONLINE ACCOUNT
+L[ON - CASH - GS - Giving LLC NL PS-Cash]
+^
+!Account
+NOFF - Morgan Stanley 402 Cash
+TBank
+^
+!Type:Bank
+!Account
+NOFF - Morgan Stanley AI 605 - Cash
+TBank
+^
+!Type:Bank
+!Account
+NON - CASH - Goldman Sachs Main-Cash
+DLinked Checking Account
+TBank
+^
+!Type:Bank
+D1/ 1'25
+U61,311.02
+T61,311.02
+C*
+PTRANSFER TO ONLINE ACCOUNT
+L[OFF - Goldman Sachs Cash]
+^
+D1/13'25
+U270,000.00
+T270,000.00
+C*
+PArchitect Capital Payjoy SPV II
+L[P - Architect Capital Payjoy SPV II, LLC]/Distribution
+^
+D1/24'25
+U383,994.99
+T383,994.99
+C*
+PAda Re
+L[C - Ada Re, Ltd.]/Distribution
+^
+D1/30'25
+U830,384.22
+T830,384.22
+C*
+PArchitect Capital
+L[P - Architect Capital Opp. Fund LP]/Distribution
+^
+D1/31'25
+U948.22
+T948.22
+C*
+PU S DOLLAR
+MInterest Earned on Bank Deposit Intended for Rein
+L[ON - INV - GS Main]
+^
+D1/31'25
+U0.07
+T0.07
+C*
+PU S DOLLAR
+MInterest Earned on Bank Deposit Intended for Rein
+L[ON - INV - GS Main]
+^
+D1/31'25
+U-7,875.00
+T-7,875.00
+C*
+PNeufield Doudna LLC
+MALPINE CAPITAL BANK 10026398 NEUFIELD DOUDNA LLC Ref: Invoice 1
+LAccounting Fees
+^
+D1/31'25
+U-0.07
+T-0.07
+C*
+PGOLDMAN SACHS BANK USA DEPOSIT (BDA)
+MInterest Reinvested to Bank Deposit
+L[ON - INV - GS Main]
+^
+D1/31'25
+U-948.22
+T-948.22
+C*
+PGOLDMAN SACHS BANK USA DEPOSIT (BDA)
+MInterest Reinvested to Bank Deposit
+L[ON - INV - GS Main]
+^
+D2/ 7'25
+U500,000.00
+T500,000.00
+C*
+PTransfer - Giving Cash
+L[ON - CASH - GS - Giving LLC-Cash]
+^
+D2/ 7'25
+U61,374.21
+T61,374.21
+C*
+PAda Re
+MFUNDS RECD ADA RE LTD FED FUNDS
+L[C - Ada Re, Ltd.]/Distribution
+^
+D2/ 7'25
+U-2,000,000.00
+T-2,000,000.00
+C*
+PD1 Aria Holdings LP
+L[P - D1 Aria Holdings LP]/Contribution
+^
+D2/12'25
+U-21,525.00
+T-21,525.00
+C*
+PAnchin
+LAccounting Fees
+^
+D2/12'25
+U-51,450.00
+T-51,450.00
+C*
+PAnchin
+LAccounting Fees
+^
+D2/13'25
+U28,390.08
+T28,390.08
+C*
+NTXFR
+PArc Credit Investors
+L[P - Arc Credit Investors]/Distribution
+^
+D2/14'25
+U471,453.47
+T471,453.47
+C*
+PAda Re
+L[C - Ada Re, Ltd.]/Distribution
+^
+D2/26'25
+U96,008.65
+T96,008.65
+C*
+NTXFR
+PHSCM
+L[C - HSCM Bermuda Ltd]/Distribution
+^
+D2/28'25
+U1.48
+T1.48
+C*
+PU S DOLLAR
+MInterest Earned on Bank Deposit Intended for Rein
+L[ON - INV - GS Main]
+^
+D2/28'25
+U2,703.03
+T2,703.03
+C*
+PU S DOLLAR
+MInterest Earned on Bank Deposit Intended for Rein
+L[ON - INV - GS Main]
+^
+D2/28'25
+U-1.48
+T-1.48
+C*
+PGOLDMAN SACHS BANK USA DEPOSIT (BDA)
+MInterest Reinvested to Bank Deposit
+L[ON - INV - GS Main]
+^
+D2/28'25
+U-2,703.03
+T-2,703.03
+C*
+PGOLDMAN SACHS BANK USA DEPOSIT (BDA)
+MInterest Reinvested to Bank Deposit
+L[ON - INV - GS Main]
+^
+D3/14'25
+U155,375.32
+T155,375.32
+C*
+PAda Re
+MFUNDS RECD ADA RE LTD FED FUNDS
+L[C - Ada Re, Ltd.]/Distribution
+^
+!Account
+NON - CASH - GS - Giving LLC NL PS-Cash
+DLinked Checking Account
+TBank
+^
+!Type:Bank
+D1/ 1'25
+U516,452.21
+T516,452.21
+C*
+PTRANSFER TO ONLINE ACCOUNT
+L[OFF - Goldman Sachs Cash - Giving LLC NL]
+^
+D1/31'25
+U1,897.59
+T1,897.59
+C*
+PU S DOLLAR
+MInterest Earned on Bank Deposit Intended for Rein
+L[ON - INV - GS - Giving LLC NL PS]
+^
+D1/31'25
+U-1,897.59
+T-1,897.59
+C*
+PGOLDMAN SACHS BANK USA DEPOSIT (BDA)
+MInterest Reinvested to Bank Deposit
+L[ON - INV - GS - Giving LLC NL PS]
+^
