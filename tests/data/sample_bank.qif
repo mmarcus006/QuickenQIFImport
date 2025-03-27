@@ -1,0 +1,21 @@
+!Type:Bank
+D01/01/2023
+T100.50
+PGrocery Store
+N123
+MWeekly groceries
+LFood:Groceries
+^
+D01/02/2023
+T-50.25
+PGas Station
+MFill up car
+LAuto:Fuel
+^
+D01/03/2023
+T1200.00
+PPaycheck
+NDIRECT DEP
+MJanuary salary
+LIncome:Salary
+^

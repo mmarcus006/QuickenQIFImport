@@ -1,152 +1,394 @@
 import csv
+from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
-from typing import List, Dict, Optional, Union, TextIO, Any
-import os
-from dateutil.parser import parse as parse_date
+import re
 
-from ..models.csv_models import CSVBankTransaction, CSVInvestmentTransaction, CSVTemplate
-from ..models.qif_models import QIFClearedStatus, InvestmentAction
+from ..models.models import (
+    BankingTransaction, InvestmentTransaction, BaseTransaction,
+    SplitTransaction, CSVTemplate, AccountType, ClearedStatus, InvestmentAction
+)
+from ..utils.date_utils import parse_date
 
+class CSVParserError(Exception):
+    """Exception raised for errors during CSV parsing."""
+    pass
 
 class CSVParser:
-    def __init__(self, date_format: str = "%Y-%m-%d", delimiter: str = ","):
-        self.date_format = date_format
-        self.delimiter = delimiter
-
-    def parse_file(self, file_path: Union[str, TextIO], template: Optional[CSVTemplate] = None) -> List[Dict[str, Any]]:
-        """Parse a CSV file and return a list of dictionaries."""
-        if isinstance(file_path, str):
-            with open(file_path, 'r', encoding='utf-8') as file:
-                return self.parse(file, template)
-        else:
-            return self.parse(file_path, template)
-
-    def parse(self, file_content: Union[str, TextIO], template: Optional[CSVTemplate] = None) -> List[Dict[str, Any]]:
-        """Parse CSV content and return a list of dictionaries."""
-        if isinstance(file_content, str):
-            import io
-            file_content = io.StringIO(file_content)
-
-        delimiter = template.delimiter if template else self.delimiter
+    """Parser for CSV files into transaction models."""
+    
+    def __init__(self):
+        self._transaction_classes = {
+            AccountType.BANK: BankingTransaction,
+            AccountType.CASH: BankingTransaction,
+            AccountType.CREDIT_CARD: BankingTransaction,
+            AccountType.ASSET: BankingTransaction,
+            AccountType.LIABILITY: BankingTransaction,
+            AccountType.INVESTMENT: InvestmentTransaction,
+        }
         
-        reader = csv.DictReader(file_content, delimiter=delimiter)
-        rows = list(reader)
+        self._field_handlers = {
+            'date': self._handle_date,
+            'amount': self._handle_amount,
+            'payee': self._handle_string,
+            'number': self._handle_string,
+            'memo': self._handle_string,
+            'category': self._handle_category,
+            'cleared_status': self._handle_cleared_status,
+            'address': self._handle_address,
+            'action': self._handle_investment_action,
+            'security': self._handle_string,
+            'price': self._handle_amount,
+            'quantity': self._handle_amount,
+            'commission': self._handle_amount,
+            'account': self._handle_account,
+        }
+    
+    def parse_csv(self, csv_content: str, template: CSVTemplate) -> List[BaseTransaction]:
+        """Parse CSV content into transaction models using the provided template.
         
-        if template:
-            mapped_rows = []
-            for row in rows:
-                mapped_row = {}
-                for csv_field, qif_field in template.field_mapping.items():
-                    if csv_field in row:
-                        mapped_row[qif_field] = row[csv_field]
-                mapped_rows.append(mapped_row)
-            return mapped_rows
-        
-        return rows
-
-    def parse_bank_transactions(self, file_path: Union[str, TextIO], template: Optional[CSVTemplate] = None) -> List[CSVBankTransaction]:
-        """Parse a CSV file and return a list of bank transactions."""
-        rows = self.parse_file(file_path, template)
-        transactions = []
-        
-        date_format = template.date_format if template else self.date_format
-        
-        for row in rows:
-            try:
-                date_str = row.get('date', row.get('Date', ''))
-                if not date_str:
-                    raise ValueError(f"Missing date field in row: {row}")
-                    
-                try:
-                    date = datetime.strptime(date_str, date_format)
-                except ValueError:
-                    try:
-                        date = parse_date(date_str)
-                    except:
-                        raise ValueError(f"Could not parse date: {date_str}")
-                
-                amount_str = row.get('amount', row.get('Amount', '0'))
-                amount = float(amount_str.replace(',', ''))
-                
-                transaction = CSVBankTransaction(
-                    date=date,
-                    amount=amount,
-                    description=row.get('description', row.get('Description', '')),
-                    reference=row.get('reference', row.get('Reference')),
-                    memo=row.get('memo', row.get('Memo')),
-                    category=row.get('category', row.get('Category')),
-                    account_name=row.get('account_name', row.get('Account')),
-                    status=row.get('status', row.get('Status'))
-                )
-                
-                transactions.append(transaction)
-            except (ValueError, KeyError) as e:
-                print(f"Error parsing row: {row}. Error: {e}")
-                continue
-                
-        return transactions
-
-    def parse_investment_transactions(self, file_path: Union[str, TextIO], template: Optional[CSVTemplate] = None) -> List[CSVInvestmentTransaction]:
-        """Parse a CSV file and return a list of investment transactions."""
-        rows = self.parse_file(file_path, template)
-        transactions = []
-        
-        date_format = template.date_format if template else self.date_format
-        
-        for row in rows:
-            try:
-                date_str = row.get('date', row.get('Date', ''))
-                if not date_str:
-                    raise ValueError(f"Missing date field in row: {row}")
-                    
-                try:
-                    date = datetime.strptime(date_str, date_format)
-                except ValueError:
-                    try:
-                        date = parse_date(date_str)
-                    except:
-                        raise ValueError(f"Could not parse date: {date_str}")
-                
-                amount_str = row.get('amount', row.get('Amount', '0'))
-                price_str = row.get('price', row.get('Price', '0'))
-                quantity_str = row.get('quantity', row.get('Quantity', '0'))
-                commission_str = row.get('commission', row.get('Commission', '0'))
-                
-                amount = float(amount_str.replace(',', '')) if amount_str else None
-                price = float(price_str.replace(',', '')) if price_str else None
-                quantity = float(quantity_str.replace(',', '')) if quantity_str else None
-                commission = float(commission_str.replace(',', '')) if commission_str else None
-                
-                transaction = CSVInvestmentTransaction(
-                    date=date,
-                    action=row.get('action', row.get('Action', '')),
-                    security=row.get('security', row.get('Security')),
-                    quantity=quantity,
-                    price=price,
-                    amount=amount,
-                    commission=commission,
-                    description=row.get('description', row.get('Description')),
-                    category=row.get('category', row.get('Category')),
-                    account=row.get('account', row.get('Account')),
-                    memo=row.get('memo', row.get('Memo')),
-                    status=row.get('status', row.get('Status'))
-                )
-                
-                transactions.append(transaction)
-            except (ValueError, KeyError) as e:
-                print(f"Error parsing row: {row}. Error: {e}")
-                continue
-                
-        return transactions
-
-    def detect_template(self, file_path: str) -> Optional[str]:
-        """Attempt to detect which template to use based on CSV headers."""
-        with open(file_path, 'r', encoding='utf-8') as file:
-            first_line = file.readline().strip()
+        Args:
+            csv_content: String containing CSV data
+            template: CSVTemplate defining the mapping between CSV columns and transaction fields
             
-            if 'action' in first_line.lower() and 'security' in first_line.lower():
-                return 'investment'
-            elif 'amount' in first_line.lower() and 'description' in first_line.lower():
-                return 'bank'
+        Returns:
+            List of transaction models (BankingTransaction or InvestmentTransaction)
+            
+        Raises:
+            CSVParserError: If the CSV content cannot be parsed
+        """
+        try:
+            transaction_class = self._transaction_classes.get(template.account_type)
+            if not transaction_class:
+                raise CSVParserError(f"Unsupported account type: {template.account_type}")
+            
+            reader = csv.reader(csv_content.splitlines(), delimiter=template.delimiter)
+            
+            rows = list(reader)
+            if not rows:
+                return []
                 
-        return None
+            start_row = template.skip_rows
+            if template.has_header:
+                start_row += 1
+                
+            header_row = None
+            if template.has_header and template.skip_rows < len(rows):
+                header_row = rows[template.skip_rows]
+                
+            transactions = []
+            for row_idx, row in enumerate(rows[start_row:], start=start_row):
+                if not any(cell.strip() for cell in row):
+                    continue
+                    
+                try:
+                    transaction = self._map_row_to_transaction(
+                        row, header_row, template, transaction_class, row_idx + 1
+                    )
+                    transactions.append(transaction)
+                except Exception as e:
+                    raise CSVParserError(f"Error parsing row {row_idx + 1}: {str(e)}")
+            
+            return transactions
+            
+        except Exception as e:
+            if isinstance(e, CSVParserError):
+                raise
+            raise CSVParserError(f"Failed to parse CSV content: {str(e)}")
+    
+    def _map_row_to_transaction(
+        self, 
+        row: List[str], 
+        header_row: Optional[List[str]], 
+        template: CSVTemplate, 
+        transaction_class: Any,
+        row_number: int
+    ) -> BaseTransaction:
+        """Map a CSV row to a transaction model.
+        
+        Args:
+            row: List of values from the CSV row
+            header_row: List of column headers (or None if no header)
+            template: CSVTemplate defining the mapping
+            transaction_class: Class to instantiate (BankingTransaction or InvestmentTransaction)
+            row_number: Row number for error reporting
+            
+        Returns:
+            BaseTransaction: A transaction model
+            
+        Raises:
+            CSVParserError: If the row cannot be mapped to a transaction
+        """
+        transaction_data = {}
+        
+        for field_name, column_name in template.field_mapping.items():
+            if not column_name:
+                continue
+                
+            column_idx = None
+            if header_row:
+                try:
+                    column_idx = header_row.index(column_name)
+                except ValueError:
+                    continue
+            else:
+                try:
+                    column_idx = int(column_name)
+                except ValueError:
+                    continue
+            
+            if column_idx is None or column_idx >= len(row):
+                continue
+                
+            value = row[column_idx].strip()
+            
+            if not value:
+                continue
+                
+            handler = self._field_handlers.get(field_name)
+            if handler:
+                try:
+                    processed_value = handler(
+                        value, field_name, template, row, header_row, row_number
+                    )
+                    if processed_value is not None:
+                        transaction_data[field_name] = processed_value
+                except Exception as e:
+                    raise CSVParserError(
+                        f"Error processing field '{field_name}' with value '{value}': {str(e)}"
+                    )
+        
+        if 'date' not in transaction_data:
+            raise CSVParserError(f"Missing required field 'date' in row {row_number}")
+            
+        if template.account_type != AccountType.INVESTMENT and 'amount' not in transaction_data:
+            if 'amount' in template.field_mapping:
+                raise CSVParserError(f"Missing required field 'amount' in row {row_number}")
+                
+        if template.account_type == AccountType.INVESTMENT:
+            if 'action' not in transaction_data:
+                raise CSVParserError(f"Missing required field 'action' in row {row_number}")
+            if 'security' not in transaction_data:
+                raise CSVParserError(f"Missing required field 'security' in row {row_number}")
+            
+        try:
+            return transaction_class(**transaction_data)
+        except Exception as e:
+            raise CSVParserError(f"Failed to create transaction from row {row_number}: {str(e)}")
+    
+    def _handle_date(
+        self, value: str, field_name: str, template: CSVTemplate, 
+        row: List[str], header_row: Optional[List[str]], row_number: int
+    ) -> datetime:
+        """Handle date field.
+        
+        Args:
+            value: Field value from CSV
+            field_name: Name of the field
+            template: CSVTemplate being used
+            row: Complete row data
+            header_row: Header row (or None)
+            row_number: Row number for error reporting
+            
+        Returns:
+            datetime: Parsed date
+            
+        Raises:
+            CSVParserError: If the date cannot be parsed
+        """
+        try:
+            return parse_date(value, template.date_format)
+        except Exception as e:
+            raise CSVParserError(f"Invalid date format in row {row_number}: {str(e)}")
+    
+    def _handle_amount(
+        self, value: str, field_name: str, template: CSVTemplate, 
+        row: List[str], header_row: Optional[List[str]], row_number: int
+    ) -> float:
+        """Handle amount field.
+        
+        Args:
+            value: Field value from CSV
+            field_name: Name of the field
+            template: CSVTemplate being used
+            row: Complete row data
+            header_row: Header row (or None)
+            row_number: Row number for error reporting
+            
+        Returns:
+            float: Parsed amount
+            
+        Raises:
+            CSVParserError: If the amount cannot be parsed
+        """
+        try:
+            cleaned = re.sub(r'[^\d\-\+\.,]', '', value)
+            
+            if ',' in cleaned and '.' in cleaned:
+                cleaned = cleaned.replace(',', '')
+            elif ',' in cleaned and '.' not in cleaned:
+                cleaned = cleaned.replace(',', '.')
+                
+            amount = float(cleaned)
+            
+            if template.amount_multiplier and field_name in template.amount_multiplier:
+                amount *= template.amount_multiplier[field_name]
+                
+            return amount
+        except ValueError:
+            raise CSVParserError(f"Invalid amount format in row {row_number}: {value}")
+    
+    def _handle_string(
+        self, value: str, field_name: str, template: CSVTemplate, 
+        row: List[str], header_row: Optional[List[str]], row_number: int
+    ) -> str:
+        """Handle string field.
+        
+        Args:
+            value: Field value from CSV
+            field_name: Name of the field
+            template: CSVTemplate being used
+            row: Complete row data
+            header_row: Header row (or None)
+            row_number: Row number for error reporting
+            
+        Returns:
+            str: Processed string value
+        """
+        return value
+    
+    def _handle_category(
+        self, value: str, field_name: str, template: CSVTemplate, 
+        row: List[str], header_row: Optional[List[str]], row_number: int
+    ) -> str:
+        """Handle category field.
+        
+        Args:
+            value: Field value from CSV
+            field_name: Name of the field
+            template: CSVTemplate being used
+            row: Complete row data
+            header_row: Header row (or None)
+            row_number: Row number for error reporting
+            
+        Returns:
+            str: Processed category value
+        """
+        if template.detect_transfers and template.transfer_pattern:
+            match = re.search(template.transfer_pattern, value)
+            if match:
+                return f"[{match.group(1)}]"
+                
+        return value
+    
+    def _handle_cleared_status(
+        self, value: str, field_name: str, template: CSVTemplate, 
+        row: List[str], header_row: Optional[List[str]], row_number: int
+    ) -> str:
+        """Handle cleared status field.
+        
+        Args:
+            value: Field value from CSV
+            field_name: Name of the field
+            template: CSVTemplate being used
+            row: Complete row data
+            header_row: Header row (or None)
+            row_number: Row number for error reporting
+            
+        Returns:
+            str: Processed cleared status value
+        """
+        status_map = {
+            'cleared': 'c',
+            'reconciled': 'R',
+            'uncleared': '',
+            'c': 'c',
+            'r': 'R',
+            'R': 'R',
+            '*': 'c',
+            'X': 'R',
+        }
+        
+        return status_map.get(value.lower(), value)
+    
+    def _handle_address(
+        self, value: str, field_name: str, template: CSVTemplate, 
+        row: List[str], header_row: Optional[List[str]], row_number: int
+    ) -> List[str]:
+        """Handle address field.
+        
+        Args:
+            value: Field value from CSV
+            field_name: Name of the field
+            template: CSVTemplate being used
+            row: Complete row data
+            header_row: Header row (or None)
+            row_number: Row number for error reporting
+            
+        Returns:
+            List[str]: List of address lines
+        """
+        return [line.strip() for line in value.split('\n')]
+    
+    def _handle_investment_action(
+        self, value: str, field_name: str, template: CSVTemplate, 
+        row: List[str], header_row: Optional[List[str]], row_number: int
+    ) -> str:
+        """Handle investment action field.
+        
+        Args:
+            value: Field value from CSV
+            field_name: Name of the field
+            template: CSVTemplate being used
+            row: Complete row data
+            header_row: Header row (or None)
+            row_number: Row number for error reporting
+            
+        Returns:
+            str: Processed investment action value
+        """
+        action_map = {
+            'buy': 'Buy',
+            'sell': 'Sell',
+            'dividend': 'Div',
+            'div': 'Div',
+            'reinvest': 'ReinvDiv',
+            'reinvdiv': 'ReinvDiv',
+            'deposit': 'XIn',
+            'xin': 'XIn',
+            'withdrawal': 'XOut',
+            'xout': 'XOut',
+            'transfer in': 'ShrsIn',
+            'shrsin': 'ShrsIn',
+            'transfer out': 'ShrsOut',
+            'shrsout': 'ShrsOut',
+            'split': 'StkSplit',
+            'stksplit': 'StkSplit',
+            'interest': 'IntInc',
+            'intinc': 'IntInc',
+            'cglong': 'CGLong',
+            'cgshort': 'CGShort',
+        }
+        
+        return action_map.get(value.lower(), value)
+    
+    def _handle_account(
+        self, value: str, field_name: str, template: CSVTemplate, 
+        row: List[str], header_row: Optional[List[str]], row_number: int
+    ) -> str:
+        """Handle account field.
+        
+        Args:
+            value: Field value from CSV
+            field_name: Name of the field
+            template: CSVTemplate being used
+            row: Complete row data
+            header_row: Header row (or None)
+            row_number: Row number for error reporting
+            
+        Returns:
+            str: Processed account value
+        """
+        if value.startswith('[') and value.endswith(']'):
+            return value
+            
+        return f"[{value}]"

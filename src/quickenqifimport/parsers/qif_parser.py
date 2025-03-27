@@ -1,354 +1,581 @@
+from typing import Dict, List, Tuple, Optional, Union, Any
 from datetime import datetime
-from typing import List, Dict, Optional, Union, TextIO, Tuple
 import re
-from ..models.qif_models import (
-    QIFAccountType, QIFClearedStatus, InvestmentAction,
-    BankTransaction, CashTransaction, CreditCardTransaction,
-    AssetTransaction, LiabilityTransaction, InvestmentTransaction,
-    Account, Category, Class, MemorizedTransaction, SplitTransaction,
-    QIFFile
+from ..models.models import (
+    QIFFile, AccountDefinition, BankingTransaction, InvestmentTransaction,
+    CategoryItem, ClassItem, MemorizedTransaction, SplitTransaction,
+    AccountType, ClearedStatus, InvestmentAction, MemorizedTransactionType
 )
+from ..utils.date_utils import parse_date
 
+class QIFParserError(Exception):
+    """Exception raised for errors during QIF parsing."""
+    pass
 
 class QIFParser:
+    """Parser for QIF files."""
+    
     def __init__(self):
-        self.date_formats = [
-            "%m/%d/%y", "%m/%d/%Y", "%d/%m/%y", "%d/%m/%Y", "%Y-%m-%d"
-        ]
-
-    def parse_file(self, file_path: str) -> QIFFile:
-        """Parse a QIF file and return a QIFFile object."""
-        with open(file_path, 'r', encoding='utf-8') as file:
-            return self.parse(file)
-
-    def parse(self, file_content: Union[str, TextIO]) -> QIFFile:
-        """Parse QIF content and return a QIFFile object."""
-        if isinstance(file_content, str):
-            lines = file_content.splitlines()
-        else:
-            lines = file_content.readlines()
-            lines = [line.strip() for line in lines]
-
-        if not lines:
-            raise ValueError("Empty QIF content")
-
-        header_line = lines[0].strip()
-        if not header_line.startswith('!'):
-            raise ValueError(f"Invalid QIF header: {header_line}")
-
-        account_type = self._parse_header(header_line)
-        qif_file = QIFFile(type=account_type)
-
-        current_entries = []
-        current_entry = []
+        self._header_parsers = {
+            '!Type:Bank': self._parse_banking_transactions,
+            '!Type:Cash': self._parse_banking_transactions,
+            '!Type:CCard': self._parse_banking_transactions,
+            '!Type:Invst': self._parse_investment_transactions,
+            '!Type:Oth A': self._parse_banking_transactions,
+            '!Type:Oth L': self._parse_banking_transactions,
+            '!Account': self._parse_accounts,
+            '!Type:Cat': self._parse_categories,
+            '!Type:Class': self._parse_classes,
+            '!Type:Memorized': self._parse_memorized_transactions,
+        }
         
-        for line in lines[1:]:
+        self._account_type_mapping = {
+            AccountType.BANK: 'bank_transactions',
+            AccountType.CASH: 'cash_transactions',
+            AccountType.CREDIT_CARD: 'credit_card_transactions',
+            AccountType.INVESTMENT: 'investment_transactions',
+            AccountType.ASSET: 'asset_transactions',
+            AccountType.LIABILITY: 'liability_transactions',
+        }
+        
+    def parse(self, qif_content: str) -> QIFFile:
+        """Parse QIF content into a QIFFile model.
+        
+        Args:
+            qif_content: String containing QIF data
+            
+        Returns:
+            QIFFile: A QIFFile model containing the parsed data
+            
+        Raises:
+            QIFParserError: If the QIF content cannot be parsed
+        """
+        try:
+            qif_file = QIFFile()
+            
+            if not qif_content.strip():
+                raise QIFParserError("QIF content is empty")
+                
+            if '^' not in qif_content:
+                raise QIFParserError("Invalid QIF format: missing transaction delimiters (^)")
+                
+            blocks = self._split_into_blocks(qif_content)
+            
+            if not blocks:
+                raise QIFParserError("No valid QIF blocks found")
+                
+            current_account = "Default"  # Default account name if none specified
+            current_account_type = None
+            
+            for header, content in blocks:
+                if header == '!Account':
+                    accounts = self._parse_accounts(content)
+                    qif_file.accounts.extend(accounts)
+                    if accounts:
+                        current_account = accounts[0].name
+                        current_account_type = accounts[0].type
+                elif header in self._header_parsers:
+                    parser = self._header_parsers[header]
+                    
+                    parsed_items = parser(content)
+                    
+                    if not parsed_items:
+                        continue
+                        
+                    if header.startswith('!Type:'):
+                        type_code = header[6:]  # Extract type code after !Type:
+                        if type_code in ['Bank', 'Cash', 'CCard', 'Oth A', 'Oth L']:
+                            account_type = self._get_account_type_from_code(type_code)
+                            
+                            current_account_type = account_type
+                            
+                            attr_name = self._account_type_mapping[current_account_type]
+                            transaction_dict = getattr(qif_file, attr_name)
+                            if current_account not in transaction_dict:
+                                transaction_dict[current_account] = []
+                            transaction_dict[current_account].extend(parsed_items)
+                        elif type_code == 'Invst':
+                            if current_account not in qif_file.investment_transactions:
+                                qif_file.investment_transactions[current_account] = []
+                            qif_file.investment_transactions[current_account].extend(parsed_items)
+                        elif type_code == 'Cat':
+                            qif_file.categories.extend(parsed_items)
+                        elif type_code == 'Class':
+                            qif_file.classes.extend(parsed_items)
+                        elif type_code == 'Memorized':
+                            qif_file.memorized_transactions.extend(parsed_items)
+            
+            return qif_file
+            
+        except Exception as e:
+            if isinstance(e, QIFParserError):
+                raise
+            raise QIFParserError(f"Failed to parse QIF content: {str(e)}")
+        
+    def _split_into_blocks(self, qif_content: str) -> List[Tuple[str, str]]:
+        """Split QIF content into blocks based on headers.
+        
+        Args:
+            qif_content: String containing QIF data
+            
+        Returns:
+            List of tuples (header, content)
+        """
+        lines = qif_content.strip().split('\n')
+        blocks = []
+        
+        current_header = None
+        current_content = []
+        
+        for line in lines:
             line = line.strip()
             if not line:
                 continue
                 
-            if line == '^':
-                if current_entry:
-                    current_entries.append(current_entry)
-                    current_entry = []
-            elif line.startswith('!'):
-                if current_entries:
-                    self._process_entries(qif_file, account_type, current_entries)
-                    current_entries = []
-                
-                account_type = self._parse_header(line)
-                qif_file.type = account_type
+            if line.startswith('!'):
+                if current_header is not None:
+                    blocks.append((current_header, '\n'.join(current_content)))
+                    current_content = []
+                current_header = line
             else:
-                current_entry.append(line)
-        
-        if current_entry:
-            current_entries.append(current_entry)
-        
-        if current_entries:
-            self._process_entries(qif_file, account_type, current_entries)
-            
-        return qif_file
-
-    def _parse_header(self, header: str) -> QIFAccountType:
-        """Parse the QIF header and return the account type."""
-        header_map = {
-            "!Type:Bank": QIFAccountType.BANK,
-            "!Type:Cash": QIFAccountType.CASH,
-            "!Type:CCard": QIFAccountType.CCARD,
-            "!Type:Invst": QIFAccountType.INVESTMENT,
-            "!Type:Oth A": QIFAccountType.ASSET,
-            "!Type:Oth L": QIFAccountType.LIABILITY,
-            "!Account": QIFAccountType.ACCOUNT,
-            "!Type:Cat": QIFAccountType.CATEGORY,
-            "!Type:Class": QIFAccountType.CLASS,
-            "!Type:Memorized": QIFAccountType.MEMORIZED,
-        }
-        
-        for key, value in header_map.items():
-            if header.startswith(key):
-                return value
+                current_content.append(line)
                 
-        raise ValueError(f"Unknown QIF header: {header}")
-
-    def _process_entries(self, qif_file: QIFFile, account_type: QIFAccountType, entries: List[List[str]]):
-        """Process parsed entries and add them to the QIF file."""
-        if account_type == QIFAccountType.BANK:
-            if qif_file.bank_transactions is None:
-                qif_file.bank_transactions = []
-            for entry in entries:
-                qif_file.bank_transactions.append(self._parse_bank_transaction(entry))
-        elif account_type == QIFAccountType.CASH:
-            if qif_file.cash_transactions is None:
-                qif_file.cash_transactions = []
-            for entry in entries:
-                qif_file.cash_transactions.append(self._parse_cash_transaction(entry))
-        elif account_type == QIFAccountType.CCARD:
-            if qif_file.credit_card_transactions is None:
-                qif_file.credit_card_transactions = []
-            for entry in entries:
-                qif_file.credit_card_transactions.append(self._parse_credit_card_transaction(entry))
-        elif account_type == QIFAccountType.INVESTMENT:
-            if qif_file.investment_transactions is None:
-                qif_file.investment_transactions = []
-            for entry in entries:
-                qif_file.investment_transactions.append(self._parse_investment_transaction(entry))
-        elif account_type == QIFAccountType.ASSET:
-            if qif_file.asset_transactions is None:
-                qif_file.asset_transactions = []
-            for entry in entries:
-                qif_file.asset_transactions.append(self._parse_asset_transaction(entry))
-        elif account_type == QIFAccountType.LIABILITY:
-            if qif_file.liability_transactions is None:
-                qif_file.liability_transactions = []
-            for entry in entries:
-                qif_file.liability_transactions.append(self._parse_liability_transaction(entry))
-        elif account_type == QIFAccountType.ACCOUNT:
-            if qif_file.accounts is None:
-                qif_file.accounts = []
-            for entry in entries:
-                qif_file.accounts.append(self._parse_account(entry))
-        elif account_type == QIFAccountType.CATEGORY:
-            if qif_file.categories is None:
-                qif_file.categories = []
-            for entry in entries:
-                qif_file.categories.append(self._parse_category(entry))
-        elif account_type == QIFAccountType.CLASS:
-            if qif_file.classes is None:
-                qif_file.classes = []
-            for entry in entries:
-                qif_file.classes.append(self._parse_class(entry))
-        elif account_type == QIFAccountType.MEMORIZED:
-            if qif_file.memorized_transactions is None:
-                qif_file.memorized_transactions = []
-            for entry in entries:
-                qif_file.memorized_transactions.append(self._parse_memorized_transaction(entry))
-
-    def _parse_date(self, date_str: str) -> datetime:
-        """Parse a date string using various formats."""
-        date_str = date_str.replace("'", "")
+        if current_header is not None and current_content:
+            blocks.append((current_header, '\n'.join(current_content)))
+            
+        return blocks
         
-        for fmt in self.date_formats:
-            try:
-                return datetime.strptime(date_str, fmt)
-            except ValueError:
+    def _get_account_type_from_code(self, type_code: str) -> AccountType:
+        """Convert QIF type code to AccountType enum.
+        
+        Args:
+            type_code: QIF type code string
+            
+        Returns:
+            AccountType enum value
+        """
+        mapping = {
+            'Bank': AccountType.BANK,
+            'Cash': AccountType.CASH,
+            'CCard': AccountType.CREDIT_CARD,
+            'Invst': AccountType.INVESTMENT,
+            'Oth A': AccountType.ASSET,
+            'Oth L': AccountType.LIABILITY,
+        }
+        return mapping.get(type_code, AccountType.BANK)
+        
+    def _parse_banking_transactions(self, content: str) -> List[BankingTransaction]:
+        """Parse banking transactions from QIF content.
+        
+        Args:
+            content: String containing transaction data
+            
+        Returns:
+            List of BankingTransaction objects
+        """
+        transactions = []
+        entries = content.split('^')
+        
+        for entry in entries:
+            if not entry.strip():
                 continue
                 
-        raise ValueError(f"Could not parse date: {date_str}")
-
-    def _parse_amount(self, amount_str: str) -> float:
-        """Parse an amount string to a float."""
-        return float(amount_str.replace(',', ''))
-
-    def _parse_cleared_status(self, status_str: str) -> QIFClearedStatus:
-        """Parse a cleared status string to enum."""
-        status_map = {
-            "": QIFClearedStatus.UNCLEARED,
-            "*": QIFClearedStatus.CLEARED,
-            "c": QIFClearedStatus.CLEARED_ALT,
-            "X": QIFClearedStatus.RECONCILED,
-            "R": QIFClearedStatus.RECONCILED_ALT,
+            lines = entry.strip().split('\n')
+            transaction_data = {}
+            splits = []
+            current_split = {}
+            
+            for line in lines:
+                if not line:
+                    continue
+                    
+                code = line[0]
+                value = line[1:].strip()
+                
+                if code == 'D':  # Date
+                    transaction_data['date'] = value
+                elif code == 'T':  # Amount
+                    transaction_data['amount'] = self._parse_amount(value)
+                elif code == 'U':  # Amount (alternate)
+                    if 'amount' not in transaction_data:
+                        transaction_data['amount'] = self._parse_amount(value)
+                elif code == 'C':  # Cleared status
+                    transaction_data['cleared_status'] = value
+                elif code == 'N':  # Check number/reference
+                    transaction_data['number'] = value
+                elif code == 'P':  # Payee
+                    transaction_data['payee'] = value
+                elif code == 'M':  # Memo
+                    transaction_data['memo'] = value
+                elif code == 'A':  # Address
+                    if 'address' not in transaction_data:
+                        transaction_data['address'] = []
+                    transaction_data['address'].append(value)
+                elif code == 'L':  # Category
+                    transaction_data['category'] = value
+                elif code == 'S':  # Split category
+                    if current_split:
+                        splits.append(current_split)
+                        current_split = {}
+                    current_split['category'] = value
+                elif code == 'E':  # Split memo
+                    if current_split:
+                        current_split['memo'] = value
+                elif code == '$':  # Split amount
+                    if current_split:
+                        current_split['amount'] = self._parse_amount(value)
+                elif code == '%':  # Split percentage
+                    if current_split:
+                        current_split['percentage'] = float(value)
+            
+            if current_split:
+                splits.append(current_split)
+                
+            if splits:
+                transaction_data['splits'] = [SplitTransaction(**split) for split in splits]
+                
+            transactions.append(BankingTransaction(**transaction_data))
+            
+        return transactions
+        
+    def _parse_investment_transactions(self, content: str) -> List[InvestmentTransaction]:
+        """Parse investment transactions from QIF content.
+        
+        Args:
+            content: String containing transaction data
+            
+        Returns:
+            List of InvestmentTransaction objects
+        """
+        transactions = []
+        entries = content.split('^')
+        
+        for entry in entries:
+            if not entry.strip():
+                continue
+                
+            lines = entry.strip().split('\n')
+            transaction_data = {}
+            
+            for line in lines:
+                if not line:
+                    continue
+                    
+                code = line[0]
+                value = line[1:].strip()
+                
+                if code == 'D':  # Date
+                    transaction_data['date'] = value
+                elif code == 'N':  # Action
+                    if value.startswith('InvestmentAction.'):
+                        action_name = value.split('.')[-1]
+                        for member_name, member_value in InvestmentAction.__members__.items():
+                            if member_name.upper() == action_name.upper():
+                                transaction_data['action'] = member_value.value
+                                break
+                        else:
+                            for member_value in InvestmentAction:
+                                if member_value.value.upper() == action_name.upper():
+                                    transaction_data['action'] = member_value.value
+                                    break
+                            else:
+                                transaction_data['action'] = value
+                    else:
+                        for member_name, member_value in InvestmentAction.__members__.items():
+                            if member_name.upper() == value.upper():
+                                transaction_data['action'] = member_value.value
+                                break
+                        else:
+                            for member_value in InvestmentAction:
+                                if member_value.value.upper() == value.upper():
+                                    transaction_data['action'] = member_value.value
+                                    break
+                            else:
+                                transaction_data['action'] = value
+                elif code == 'Y':  # Security
+                    transaction_data['security'] = value
+                elif code == 'I':  # Price
+                    transaction_data['price'] = self._parse_amount(value)
+                elif code == 'Q':  # Quantity
+                    transaction_data['quantity'] = self._parse_amount(value)
+                elif code == 'T':  # Transaction amount
+                    transaction_data['amount'] = self._parse_amount(value)
+                elif code == 'C':  # Cleared status
+                    transaction_data['cleared_status'] = value
+                elif code == 'P':  # Text for transfers
+                    transaction_data['payee'] = value
+                elif code == 'M':  # Memo
+                    transaction_data['memo'] = value
+                elif code == 'O':  # Commission
+                    transaction_data['commission'] = self._parse_amount(value)
+                elif code == 'L':  # Category or Account for transfers
+                    if ':' in value:  # If it contains a colon, it's likely a category
+                        transaction_data['category'] = value
+                    else:  # Otherwise treat as account
+                        transaction_data['account'] = value
+                elif code == '$':  # Transfer amount
+                    transaction_data['transfer_amount'] = self._parse_amount(value)
+            
+            transactions.append(InvestmentTransaction(**transaction_data))
+            
+        return transactions
+        
+    def _parse_accounts(self, content: str) -> List[AccountDefinition]:
+        """Parse account definitions from QIF content.
+        
+        Args:
+            content: String containing account data
+            
+        Returns:
+            List of AccountDefinition objects
+        """
+        accounts = []
+        entries = content.split('^')
+        
+        for entry in entries:
+            if not entry.strip():
+                continue
+                
+            lines = entry.strip().split('\n')
+            account_data = {}
+            
+            for line in lines:
+                if not line:
+                    continue
+                    
+                code = line[0]
+                value = line[1:].strip()
+                
+                if code == 'N':  # Name
+                    account_data['name'] = value
+                elif code == 'T':  # Type
+                    account_data['type'] = self._parse_account_type(value)
+                elif code == 'D':  # Description
+                    account_data['description'] = value
+                elif code == 'L':  # Credit limit
+                    account_data['credit_limit'] = self._parse_amount(value)
+                elif code == '/':  # Statement date
+                    account_data['statement_balance_date'] = value
+                elif code == '$':  # Statement balance
+                    account_data['statement_balance'] = self._parse_amount(value)
+            
+            accounts.append(AccountDefinition(**account_data))
+            
+        return accounts
+        
+    def _parse_categories(self, content: str) -> List[CategoryItem]:
+        """Parse category list from QIF content.
+        
+        Args:
+            content: String containing category data
+            
+        Returns:
+            List of CategoryItem objects
+        """
+        categories = []
+        entries = content.split('^')
+        
+        for entry in entries:
+            if not entry.strip():
+                continue
+                
+            lines = entry.strip().split('\n')
+            category_data = {
+                'tax_related': False,
+                'income': False,
+                'expense': True
+            }
+            
+            for line in lines:
+                if not line:
+                    continue
+                    
+                code = line[0]
+                value = line[1:].strip()
+                
+                if code == 'N':  # Name
+                    category_data['name'] = value
+                elif code == 'D':  # Description
+                    category_data['description'] = value
+                elif code == 'T':  # Tax related
+                    category_data['tax_related'] = True
+                elif code == 'I':  # Income
+                    category_data['income'] = True
+                    category_data['expense'] = False
+                elif code == 'E':  # Expense
+                    category_data['expense'] = True
+                    category_data['income'] = False
+                elif code == 'B':  # Budget
+                    category_data['budget_amount'] = self._parse_amount(value)
+                elif code == 'R':  # Tax schedule
+                    category_data['tax_schedule'] = value
+            
+            categories.append(CategoryItem(**category_data))
+            
+        return categories
+        
+    def _parse_classes(self, content: str) -> List[ClassItem]:
+        """Parse class list from QIF content.
+        
+        Args:
+            content: String containing class data
+            
+        Returns:
+            List of ClassItem objects
+        """
+        classes = []
+        entries = content.split('^')
+        
+        for entry in entries:
+            if not entry.strip():
+                continue
+                
+            lines = entry.strip().split('\n')
+            class_data = {}
+            
+            for line in lines:
+                if not line:
+                    continue
+                    
+                code = line[0]
+                value = line[1:].strip()
+                
+                if code == 'N':  # Name
+                    class_data['name'] = value
+                elif code == 'D':  # Description
+                    class_data['description'] = value
+            
+            classes.append(ClassItem(**class_data))
+            
+        return classes
+        
+    def _parse_memorized_transactions(self, content: str) -> List[MemorizedTransaction]:
+        """Parse memorized transactions from QIF content.
+        
+        Args:
+            content: String containing memorized transaction data
+            
+        Returns:
+            List of MemorizedTransaction objects
+        """
+        transactions = []
+        entries = content.split('^')
+        
+        for entry in entries:
+            if not entry.strip():
+                continue
+                
+            lines = entry.strip().split('\n')
+            transaction_data = {}
+            splits = []
+            current_split = {}
+            
+            for line in lines:
+                if not line:
+                    continue
+                    
+                code = line[0]
+                value = line[1:].strip()
+                
+                if code == 'K':  # Transaction type
+                    if len(value) > 0:
+                        transaction_type = value[0]
+                        if transaction_type == 'C':
+                            transaction_data['transaction_type'] = MemorizedTransactionType.CHECK
+                        elif transaction_type == 'D':
+                            transaction_data['transaction_type'] = MemorizedTransactionType.DEPOSIT
+                        elif transaction_type == 'P':
+                            transaction_data['transaction_type'] = MemorizedTransactionType.PAYMENT
+                        elif transaction_type == 'I':
+                            transaction_data['transaction_type'] = MemorizedTransactionType.INVESTMENT
+                        elif transaction_type == 'E':
+                            transaction_data['transaction_type'] = MemorizedTransactionType.ELECTRONIC
+                elif code == 'T':  # Amount
+                    transaction_data['amount'] = self._parse_amount(value)
+                elif code == 'C':  # Cleared status
+                    transaction_data['cleared_status'] = value
+                elif code == 'P':  # Payee
+                    transaction_data['payee'] = value
+                elif code == 'M':  # Memo
+                    transaction_data['memo'] = value
+                elif code == 'A':  # Address
+                    if 'address' not in transaction_data:
+                        transaction_data['address'] = []
+                    transaction_data['address'].append(value)
+                elif code == 'L':  # Category
+                    transaction_data['category'] = value
+                elif code == 'S':  # Split category
+                    if current_split:
+                        splits.append(current_split)
+                        current_split = {}
+                    current_split['category'] = value
+                elif code == 'E':  # Split memo
+                    if current_split:
+                        current_split['memo'] = value
+                elif code == '$':  # Split amount
+                    if current_split:
+                        current_split['amount'] = self._parse_amount(value)
+                elif code == '%':  # Split percentage
+                    if current_split:
+                        current_split['percentage'] = float(value)
+            
+            if current_split:
+                splits.append(current_split)
+                
+            if splits:
+                transaction_data['splits'] = [SplitTransaction(**split) for split in splits]
+                
+            transactions.append(MemorizedTransaction(**transaction_data))
+            
+        return transactions
+        
+    def _parse_account_type(self, type_str: str) -> AccountType:
+        """Parse account type string to AccountType enum.
+        
+        Args:
+            type_str: Account type string from QIF
+            
+        Returns:
+            AccountType enum value
+        """
+        type_map = {
+            'Bank': AccountType.BANK,
+            'Cash': AccountType.CASH,
+            'CCard': AccountType.CREDIT_CARD,
+            'Invst': AccountType.INVESTMENT,
+            'Oth A': AccountType.ASSET,
+            'Oth L': AccountType.LIABILITY,
+            'Invoice': AccountType.INVOICE,
         }
         
-        return status_map.get(status_str, QIFClearedStatus.UNCLEARED)
-
-    def _create_field_dict(self, entry: List[str]) -> Dict[str, str]:
-        """Convert QIF entry lines to a dictionary of fields."""
-        field_dict = {}
-        for line in entry:
-            if line and len(line) > 1:
-                field_code = line[0]
-                field_value = line[1:]
-                
-                if field_code in field_dict:
-                    if isinstance(field_dict[field_code], list):
-                        field_dict[field_code].append(field_value)
-                    else:
-                        field_dict[field_code] = [field_dict[field_code], field_value]
-                else:
-                    field_dict[field_code] = field_value
-                    
-        return field_dict
-
-    def _parse_bank_transaction(self, entry: List[str]) -> BankTransaction:
-        """Parse a bank transaction entry."""
-        field_dict = self._create_field_dict(entry)
+        return type_map.get(type_str, AccountType.BANK)
         
-        splits = self._extract_splits(field_dict)
+    def _parse_amount(self, amount_str: str) -> float:
+        """Parse amount string to float.
         
-        transaction = BankTransaction(
-            date=self._parse_date(field_dict.get('D', '')),
-            amount=self._parse_amount(field_dict.get('T', '0')),
-            cleared_status=self._parse_cleared_status(field_dict.get('C', '')),
-            number=field_dict.get('N'),
-            payee=field_dict.get('P'),
-            memo=field_dict.get('M'),
-            address=field_dict.get('A', []) if isinstance(field_dict.get('A'), list) else [field_dict.get('A')] if field_dict.get('A') else None,
-            category=field_dict.get('L'),
-            splits=splits,
-            reimbursable=True if field_dict.get('F') else None
-        )
+        Args:
+            amount_str: Amount string from QIF
+            
+        Returns:
+            float: Parsed amount
+            
+        Raises:
+            QIFParserError: If the amount cannot be parsed
+        """
+        if not amount_str:
+            return 0.0
+            
+        if not any(c.isdigit() for c in amount_str):
+            raise QIFParserError(f"Invalid amount format: {amount_str}")
+            
+        cleaned = re.sub(r'[^\d\-\+\.,]', '', amount_str)
         
-        return transaction
-
-    def _parse_cash_transaction(self, entry: List[str]) -> CashTransaction:
-        """Parse a cash transaction entry."""
-        return CashTransaction(**self._parse_bank_transaction(entry).model_dump())
-
-    def _parse_credit_card_transaction(self, entry: List[str]) -> CreditCardTransaction:
-        """Parse a credit card transaction entry."""
-        return CreditCardTransaction(**self._parse_bank_transaction(entry).model_dump())
-
-    def _parse_asset_transaction(self, entry: List[str]) -> AssetTransaction:
-        """Parse an asset transaction entry."""
-        return AssetTransaction(**self._parse_bank_transaction(entry).model_dump())
-
-    def _parse_liability_transaction(self, entry: List[str]) -> LiabilityTransaction:
-        """Parse a liability transaction entry."""
-        return LiabilityTransaction(**self._parse_bank_transaction(entry).model_dump())
-
-    def _parse_investment_transaction(self, entry: List[str]) -> InvestmentTransaction:
-        """Parse an investment transaction entry."""
-        field_dict = self._create_field_dict(entry)
-        
-        action_str = field_dict.get('N', '')
+        if ',' in cleaned and '.' in cleaned:
+            cleaned = cleaned.replace(',', '')
+        elif ',' in cleaned and '.' not in cleaned:
+            cleaned = cleaned.replace(',', '.')
+            
         try:
-            action = InvestmentAction(action_str)
+            return float(cleaned)
         except ValueError:
-            action = InvestmentAction.BUY  # Default
-            
-        transaction = InvestmentTransaction(
-            date=self._parse_date(field_dict.get('D', '')),
-            action=action,
-            security=field_dict.get('Y'),
-            price=float(field_dict.get('I', '0')) if field_dict.get('I') else None,
-            quantity=float(field_dict.get('Q', '0')) if field_dict.get('Q') else None,
-            amount=float(field_dict.get('T', '0')) if field_dict.get('T') else None,
-            cleared_status=self._parse_cleared_status(field_dict.get('C', '')),
-            text=field_dict.get('P'),
-            memo=field_dict.get('M'),
-            commission=float(field_dict.get('O', '0')) if field_dict.get('O') else None,
-            account=field_dict.get('L'),
-            transfer_amount=float(field_dict.get('$', '0')) if field_dict.get('$') else None
-        )
-        
-        return transaction
-
-    def _parse_account(self, entry: List[str]) -> Account:
-        """Parse an account entry."""
-        field_dict = self._create_field_dict(entry)
-        
-        account = Account(
-            name=field_dict.get('N', ''),
-            type=QIFAccountType(field_dict.get('T', 'Bank')),
-            description=field_dict.get('D'),
-            credit_limit=float(field_dict.get('L', '0')) if field_dict.get('L') else None,
-            statement_date=self._parse_date(field_dict.get('/', '')) if field_dict.get('/') else None,
-            statement_balance=float(field_dict.get('$', '0')) if field_dict.get('$') else None
-        )
-        
-        return account
-
-    def _parse_category(self, entry: List[str]) -> Category:
-        """Parse a category entry."""
-        field_dict = self._create_field_dict(entry)
-        
-        category = Category(
-            name=field_dict.get('N', ''),
-            description=field_dict.get('D'),
-            tax_related=True if field_dict.get('T') else None,
-            income=True if field_dict.get('I') else None,
-            expense=True if field_dict.get('E') else None,
-            budget_amount=float(field_dict.get('B', '0')) if field_dict.get('B') else None,
-            tax_schedule=field_dict.get('R')
-        )
-        
-        return category
-
-    def _parse_class(self, entry: List[str]) -> Class:
-        """Parse a class entry."""
-        field_dict = self._create_field_dict(entry)
-        
-        cls = Class(
-            name=field_dict.get('N', ''),
-            description=field_dict.get('D')
-        )
-        
-        return cls
-
-    def _parse_memorized_transaction(self, entry: List[str]) -> MemorizedTransaction:
-        """Parse a memorized transaction entry."""
-        field_dict = self._create_field_dict(entry)
-        
-        transaction_type = ""
-        for code in ['KC', 'KD', 'KP', 'KI', 'KE']:
-            if code in field_dict:
-                transaction_type = code
-                break
-                
-        if transaction_type == 'KI':
-            transaction = self._parse_investment_transaction(entry)
-        else:
-            transaction = self._parse_bank_transaction(entry)
-            
-        return MemorizedTransaction(
-            transaction_type=transaction_type,
-            transaction=transaction
-        )
-
-    def _extract_splits(self, field_dict: Dict[str, str]) -> Optional[List[SplitTransaction]]:
-        """Extract split transactions from a field dictionary."""
-        if 'S' not in field_dict:
-            return None
-            
-        split_categories = field_dict.get('S', [])
-        split_memos = field_dict.get('E', [])
-        split_amounts = field_dict.get('$', [])
-        split_percents = field_dict.get('%', [])
-        
-        if not isinstance(split_categories, list):
-            split_categories = [split_categories]
-        if not isinstance(split_memos, list):
-            split_memos = [split_memos] if split_memos else []
-        if not isinstance(split_amounts, list):
-            split_amounts = [split_amounts]
-        if not isinstance(split_percents, list):
-            split_percents = [split_percents] if split_percents else []
-            
-        max_len = max(len(split_categories), len(split_amounts))
-        split_memos = (split_memos + [None] * max_len)[:max_len]
-        split_percents = (split_percents + [None] * max_len)[:max_len]
-        
-        splits = []
-        for i in range(len(split_categories)):
-            if i < len(split_amounts):
-                memo = split_memos[i] if i < len(split_memos) else None
-                percent = float(split_percents[i]) if i < len(split_percents) and split_percents[i] else None
-                
-                splits.append(SplitTransaction(
-                    category=split_categories[i],
-                    memo=memo,
-                    amount=self._parse_amount(split_amounts[i]),
-                    percent=percent
-                ))
-                
-        return splits if splits else None
+            raise QIFParserError(f"Invalid amount format: {amount_str}")
