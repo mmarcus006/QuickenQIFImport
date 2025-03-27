@@ -1,0 +1,7 @@
+Date,Amount,Description,Reference,Memo,Category,Account Name,Status
+2025-01-15,1000.50,Deposit from Client,DEPOSIT123,January Project Payment,Income:Consulting,[Checking Account],Cleared
+2025-01-20,-85.75,Grocery Store,POS456,Weekly Groceries,Food:Groceries,,
+2025-01-25,-125.00,Electric Company,BILLPAY789,January Bill,Utilities:Electric,,Reconciled
+2025-01-26,-1500.00,Transfer to Savings,TRANSFER101,Monthly Savings Transfer,[Savings Account],,
+2025-01-28,42.18,Refund,REFUND202,Return of Damaged Item,Misc Income,,
+2025-01-30,-250.00,Rent Payment,CHECK1001,February Rent,Housing:Rent,,Cleared

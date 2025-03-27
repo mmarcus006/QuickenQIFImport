@@ -1,0 +1,31 @@
+!Type:Invst
+D01/01/2023
+NBuy
+YAAPL
+Q10
+I150.75
+T-1507.50
+O7.50
+PBroker
+MBuy Apple stock
+LInvestments:Stocks
+^
+D01/02/2023
+NSell
+YMSFT
+Q5
+I250.25
+T1251.25
+O6.25
+PBroker
+MSell Microsoft stock
+LInvestments:Stocks
+^
+D01/03/2023
+NDiv
+YVTI
+T0
+PVanguard
+MDividend payment
+LIncome:Dividends
+^

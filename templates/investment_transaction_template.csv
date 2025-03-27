@@ -1,0 +1,8 @@
+Date,Action,Security,Quantity,Price,Amount,Commission,Description,Category,Account,Memo,Status
+2025-01-10,Buy,AAPL,10,175.25,1752.50,9.95,Buy Apple Inc,,[Investment Account],Initial position,Cleared
+2025-01-15,Sell,MSFT,5,350.75,1753.75,9.95,Sell Microsoft,,[Investment Account],Taking profits,
+2025-01-20,Div,VTI,0,0,25.50,0,Vanguard ETF Dividend,Income:Dividends,[Checking Account],Quarterly dividend,Reconciled
+2025-01-21,ReinvDiv,SCHD,0.452,65.25,29.50,0,Reinvested Dividend,,[Investment Account],,
+2025-01-25,ShrsIn,BRK.B,2,400.00,800.00,0,Shares Added,,[Investment Account],Gift of shares,
+2025-01-30,XOut,,,,,500.00,Withdrawal,[Checking Account],,Transferred to checking,
+

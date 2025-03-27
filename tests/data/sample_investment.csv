@@ -1,0 +1,4 @@
+Date,Action,Security,Quantity,Price,Amount,Commission,Description,Memo,Category
+2023-01-01,Buy,AAPL,10,150.75,-1507.50,7.50,Broker,Buy Apple stock,Investments:Stocks
+2023-01-02,Sell,MSFT,5,250.25,1251.25,6.25,Broker,Sell Microsoft stock,Investments:Stocks
+2023-01-03,Div,VTI,,,,0,Vanguard,Dividend payment,Income:Dividends
